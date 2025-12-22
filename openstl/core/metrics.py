@@ -9,6 +9,11 @@ except:
     lpips = None
     cal_ssim = None
 
+def HSS(hits, fas, misses, cn, eps=1e-6):
+    """Heisenberg-Kutner Skill Score"""
+    num = 2 * (hits * cn - misses * fas)
+    den = (hits + misses) * (misses + cn) + (hits + fas) * (fas + cn)
+    return np.mean(num / (den + eps))
 
 def rescale(x):
     return (x - x.max()) / (x.max() - x.min()) * 2 - 1
@@ -169,6 +174,7 @@ class LPIPS(torch.nn.Module):
 def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse'],
            clip_range=[0, 1], channel_names=None,
            spatial_norm=False, return_log=True, threshold=74.0):
+
     """The evaluation function to output metrics.
 
     Args:
@@ -190,7 +196,7 @@ def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse'],
         true = true * std + mean
     eval_res = {}
     eval_log = ""
-    allowed_metrics = ['mae', 'mse', 'rmse', 'ssim', 'psnr', 'snr', 'lpips', 'pod', 'sucr', 'csi']
+    allowed_metrics = ['mae', 'mse', 'rmse', 'ssim', 'psnr', 'snr', 'lpips', 'pod', 'sucr', 'csi','radar_metrics']
     invalid_metrics = set(metrics) - set(allowed_metrics)
     if len(invalid_metrics) != 0:
         raise ValueError(f'metric {invalid_metrics} is not supported.')
@@ -234,6 +240,50 @@ def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse'],
                 rmse_sum += eval_res[f'rmse_{str(c_name)}']
             eval_res['rmse'] = rmse_sum / c_group
 
+    if 'radar_metrics' in metrics:
+        # CIKM 物理参数 (参考 Diffcast)
+        scale = 90.0
+        thresholds = [20, 30, 35, 40]
+
+        # 还原数值到 [0, 90]
+        pred_rescaled = pred * scale
+        true_rescaled = true * scale
+
+        # 重新计算物理尺度上的基础指标 (覆盖之前的归一化指标)
+        if 'mse' in metrics:
+            eval_res['mse'] = MSE(pred_rescaled, true_rescaled, spatial_norm)
+        if 'mae' in metrics:
+            eval_res['mae'] = MAE(pred_rescaled, true_rescaled, spatial_norm)
+        if 'rmse' in metrics:
+            eval_res['rmse'] = RMSE(pred_rescaled, true_rescaled, spatial_norm)
+
+        # 计算多阈值指标
+        avg_csi, avg_pod, avg_far, avg_hss = [], [], [], []
+        total_pixels = np.prod(pred.shape[-2:])
+
+        for t in thresholds:
+            # 计算 hits, false alarms, misses
+            hits, fas, misses = sevir_metrics(pred_rescaled, true_rescaled, t)
+            hits, fas, misses = np.sum(hits), np.sum(fas), np.sum(misses)
+
+            # 计算 Correct Negatives
+            cn = total_pixels * pred.shape[0] * pred.shape[1] - hits - misses - fas
+
+            t_csi = CSI(hits, fas, misses)
+            t_hss = HSS(hits, fas, misses, cn)
+
+            # 记录每个阈值的详细分数
+            eval_res[f'csi_{t}'] = t_csi
+            eval_res[f'hss_{t}'] = t_hss
+
+            avg_csi.append(t_csi)
+            avg_hss.append(t_hss)
+
+        # 记录平均分
+        eval_res['cikm_csi'] = np.mean(avg_csi)
+        eval_res['cikm_hss'] = np.mean(avg_hss)
+
+
     if 'pod' in metrics:
         hits, fas, misses = sevir_metrics(pred, true, threshold)
         eval_res['pod'] = POD(hits, misses)
@@ -242,13 +292,24 @@ def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse'],
         
     pred = np.maximum(pred, clip_range[0])
     pred = np.minimum(pred, clip_range[1])
+    # if 'ssim' in metrics:
+    #     ssim = 0
+    #     for b in range(pred.shape[0]):
+    #         for f in range(pred.shape[1]):
+    #             ssim += cal_ssim(pred[b, f].swapaxes(0, 2),
+    #                              true[b, f].swapaxes(0, 2), multichannel=True)
+    #     eval_res['ssim'] = ssim / (pred.shape[0] * pred.shape[1])
+
     if 'ssim' in metrics:
-        ssim = 0
+        # 严格对齐：在物理尺度(0-90)上计算 SSIM
+        ssim_val = 0
         for b in range(pred.shape[0]):
             for f in range(pred.shape[1]):
-                ssim += cal_ssim(pred[b, f].swapaxes(0, 2),
-                                 true[b, f].swapaxes(0, 2), multichannel=True)
-        eval_res['ssim'] = ssim / (pred.shape[0] * pred.shape[1])
+                # 注意：这里传入 data_range=scale (即90.0)
+                ssim_val += cal_ssim(pred_rescaled[b, f].squeeze(),
+                                     true_rescaled[b, f].squeeze(),
+                                     data_range=scale)
+        eval_res['ssim'] = ssim_val / (pred.shape[0] * pred.shape[1])
 
     if 'psnr' in metrics:
         psnr = 0

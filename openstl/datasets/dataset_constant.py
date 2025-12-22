@@ -221,7 +221,7 @@ dataset_parameters = {
         'metrics': ['mse', 'mae', 'pod', 'sucr', 'csi', 'lpips'],
     },
     'cikm': {
-        'in_shape': [5, 1, 64, 64],
+        'in_shape': [5, 1, 128, 128],
         'pre_seq_length': 5,
         'aft_seq_length': 10,
         'total_length': 15,
@@ -234,13 +234,13 @@ dataset_parameters = {
         # 2. 评价指标：参考 DiffCast 论文 Table 1 [cite: 250]
         # 包含 MSE, MAE (基础), CSI, HSS (分类), SSIM, LPIPS (视觉)
         # 注意：HSS OpenSTL 默认可能不直接支持，但 CSI/POD/SUCR 是支持的
-        'metrics': ['mse', 'mae', 'csi', 'pod', 'sucr', 'lpips'],
+        'metrics': ['mse', 'mae', 'pod', 'sucr', 'csi', 'lpips'],
 
         # 3. 关键阈值设置：参考 DiffCast 论文 Section 7 "Datasets Details"
         # 论文指出 CIKM 范围是 [0, 76] dBZ，阈值取 [20, 30, 35, 40]
         # OpenSTL 需要归一化后的阈值 (0-1)。
         # 计算公式：20 dBZ / 76 dBZ ≈ 0.26315
-        'metric_threshold': 0.26315,
+        'metric_threshold': 0.2,
     },
 
 

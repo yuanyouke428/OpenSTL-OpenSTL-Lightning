@@ -7,7 +7,7 @@ from openstl.datasets.utils import create_loader
 
 
 class CIKMDataset(Dataset):
-    def __init__(self, data_path, mode='train', input_len=10, predict_len=5, target_size=64):
+    def __init__(self, data_path, mode='train', input_len=10, predict_len=5, target_size=128):
         super().__init__()
         self.data_path = data_path
         self.mode = mode
@@ -46,9 +46,23 @@ class CIKMDataset(Dataset):
         # Resize
         frames = []
         for i in range(data.shape[0]):
-            img = data[i]
-            if self.target_size != 101:
-                img = cv2.resize(img, (self.target_size, self.target_size), interpolation=cv2.INTER_LINEAR)
+            img = data[i]  # 原始大小 101x101
+
+            # 如果目标尺寸大于原始尺寸 (例如 128 > 101)，进行补零 (Padding)
+            # 这符合 Diffcast 的 CenterCrop (pad if needed) 逻辑
+            if self.target_size > img.shape[0]:
+                pad_h = self.target_size - img.shape[0]
+                pad_w = self.target_size - img.shape[1]
+                # 上下左右居中填充
+                img = np.pad(img, (
+                    (pad_h // 2, pad_h - pad_h // 2),
+                    (pad_w // 2, pad_w - pad_w // 2)
+                ), mode='constant', constant_values=0)
+
+            # 如果配置强制要求 Resize 且不是 101 也不是 128 (兼容旧逻辑)
+            elif self.target_size != img.shape[0]:
+                img = cv2.resize(img, (self.target_size, self.target_size))
+
             frames.append(img)
         data = np.stack(frames, axis=0)
 
@@ -65,7 +79,7 @@ class CIKMDataset(Dataset):
 
 # --- 这是刚才缺失的关键函数 ---
 def load_data(batch_size, val_batch_size, data_root, num_workers=4,
-              pre_seq_length=10, aft_seq_length=10, in_shape=[10, 1, 64, 64],
+              pre_seq_length=10, aft_seq_length=10, in_shape=[10, 1, 128, 128],
               distributed=False, use_augment=False, use_prefetcher=False, drop_last=False):
     target_size = in_shape[-1] if in_shape is not None else 64
 

@@ -12,7 +12,8 @@ class Base_method(l.LightningModule):
     def __init__(self, **args):
         super().__init__()
 
-        if 'weather' in args['dataname']:
+        #if 'weather' in args['dataname']:
+        if 'weather' in args['dataname'] or 'cikm' in args['dataname']:
             self.metric_list, self.spatial_norm = args['metrics'], True
             self.channel_names = args.data_name if 'mv' in args['data_name'] else None
         else:
