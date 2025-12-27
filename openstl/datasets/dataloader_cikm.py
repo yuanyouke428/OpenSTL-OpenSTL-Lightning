@@ -39,10 +39,8 @@ class CIKMDataset(Dataset):
         with h5py.File(self.data_path, 'r') as f:
             key = self.keys[index]
             data = f[self.mode][key][()]
-
         # 归一化
         data = data.astype(np.float32) / 255.0
-
         # Resize
         frames = []
         for i in range(data.shape[0]):

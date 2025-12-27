@@ -32,6 +32,6 @@ training_params = dict(
 # 【修改 3】新增测试参数，启用 cikm 评估指标
 test_params = dict(
     # 'cikm' 会触发我们刚才在 metrics.py 里写的逻辑
-    metrics=['mse', 'mae', 'ssim', 'radar_metrics'],
+    metrics=['mse', 'mae', 'ssim', 'pod','radar_metrics'],
 )
 

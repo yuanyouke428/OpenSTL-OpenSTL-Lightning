@@ -234,7 +234,7 @@ dataset_parameters = {
         # 2. 评价指标：参考 DiffCast 论文 Table 1 [cite: 250]
         # 包含 MSE, MAE (基础), CSI, HSS (分类), SSIM, LPIPS (视觉)
         # 注意：HSS OpenSTL 默认可能不直接支持，但 CSI/POD/SUCR 是支持的
-        'metrics': ['mse', 'mae', 'pod', 'sucr', 'csi', 'lpips'],
+        'metrics': ['mse', 'mae', 'pod', 'ssim', 'lpips','radar_metrics'],
 
         # 3. 关键阈值设置：参考 DiffCast 论文 Section 7 "Datasets Details"
         # 论文指出 CIKM 范围是 [0, 76] dBZ，阈值取 [20, 30, 35, 40]
