@@ -5,8 +5,8 @@ import matplotlib.patches as patches
 import os
 
 # 1. 配置路径
-work_dir = './work_dirs/CIKM_SimVP_Aligned/saved'
-save_dir = './vis_results_cikm_SimVP_Aligned'
+work_dir = './work_dirs/CIKM_ConvLSTM/saved'
+save_dir = './vis_results_cikm_ConvLSTM'
 os.makedirs(save_dir, exist_ok=True)
 
 print(f"Loading data from {work_dir} ...")
@@ -118,7 +118,7 @@ sum_rain = trues.sum(axis=(1, 2, 3, 4))
 max_rain_idx = np.argmax(sum_rain)
 
 print(f"正在可视化降雨量最大的样本 (Index: {max_rain_idx}) ...")
-save_styled_plot(max_rain_idx)
+save_styled_plot(3)
 
 # 你也可以手动指定 index，例如可视化前 5 个
 # for i in range(5):
