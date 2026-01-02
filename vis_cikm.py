@@ -131,8 +131,8 @@ import matplotlib.cm as cm  # 引入 cm 模块用于颜色映射处理
 import os
 
 # 1. 配置路径
-work_dir = './work_dirs/CIKM_PhyDNet/saved'
-save_dir = './vis_results_cikm_PhyDNet'
+work_dir = './work_dirs/CIKM_MAU/saved'
+save_dir = './vis_results_cikm_MAU'
 os.makedirs(save_dir, exist_ok=True)
 
 print(f"Loading data from {work_dir} ...")
