@@ -220,6 +220,16 @@ dataset_parameters = {
         'data_name': 'vil', 
         'metrics': ['mse', 'mae', 'pod', 'sucr', 'csi', 'lpips'],
     },
+
+     'sevir': {
+        'in_shape': [13, 1, 128, 128],
+        'pre_seq_length': 13,
+        'aft_seq_length': 12,
+        'total_length': 25,
+        'data_name': 'sevir',
+        'metrics': ['mse', 'mae', 'pod', 'ssim', 'lpips','radar_metrics'],
+    },
+
     'cikm': {
         'in_shape': [5, 1, 128, 128],
         'pre_seq_length': 5,

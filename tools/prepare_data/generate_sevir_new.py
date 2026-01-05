@@ -1,5 +1,5 @@
 """
-Input generator for sevir (Single File Output with Groups)
+Input generator for sevir (Resize 128x128 + Sliding Window + Area Coverage Filtering)
 """
 
 import argparse
@@ -11,8 +11,8 @@ import pandas as pd
 import h5py
 import torch
 import datetime
+import cv2
 
-# 忽略 HDF5 文件锁警告
 os.environ["HDF5_USE_FILE_LOCKING"] = 'FALSE'
 
 from torch.utils.data import Dataset
@@ -20,10 +20,12 @@ from torch.utils.data import Dataset
 TYPES = ['vil']
 
 import pathlib
+
 _thisdir = str(pathlib.Path(__file__).parent.absolute())
 
 DEFAULT_CATALOG = 'data/sevir/CATALOG.csv'
 DEFAULT_DATA_HOME = 'data/sevir/data'
+
 
 class SEVIRDataset(Dataset):
     def __init__(self, catalog, data_types=None, sevir_data_home=None,
@@ -86,9 +88,9 @@ class SEVIRDataset(Dataset):
             self._samples = self.catalog.groupby('id').apply(process_group)
 
         if isinstance(self._samples, pd.DataFrame):
-             self._samples = self._samples.reset_index(drop=True)
+            self._samples = self._samples.reset_index(drop=True)
         else:
-             self._samples = pd.DataFrame(self._samples.tolist())
+            self._samples = pd.DataFrame(self._samples.tolist())
 
         col_name = f'{self.data_types[0]}_filename'
         if col_name in self._samples.columns:
@@ -114,15 +116,23 @@ class SEVIRDataset(Dataset):
                 possible_path = osp.join(self.sevir_data_home, f)
                 if not osp.exists(possible_path):
                     if 'vil' not in f and 'vil' not in self.sevir_data_home:
-                         possible_path = osp.join(self.sevir_data_home, 'vil', f)
-                    elif '2017' in f: possible_path = osp.join(self.sevir_data_home, 'vil', '2017', osp.basename(f))
-                    elif '2018' in f: possible_path = osp.join(self.sevir_data_home, 'vil', '2018', osp.basename(f))
-                    elif '2019' in f: possible_path = osp.join(self.sevir_data_home, 'vil', '2019', osp.basename(f))
+                        possible_path = osp.join(self.sevir_data_home, 'vil', f)
+                    elif '2017' in f:
+                        possible_path = osp.join(self.sevir_data_home, 'vil', '2017', osp.basename(f))
+                    elif '2018' in f:
+                        possible_path = osp.join(self.sevir_data_home, 'vil', '2018', osp.basename(f))
+                    elif '2019' in f:
+                        possible_path = osp.join(self.sevir_data_home, 'vil', '2019', osp.basename(f))
 
                 if osp.exists(possible_path):
                     self.hdf_files[f] = h5py.File(possible_path, 'r')
 
-    def load_batches(self, n_batches=10, offset=0, progress_bar=False):
+    def load_batches(self, n_batches=10, offset=0, progress_bar=False,
+                     target_size=128, stride=12, min_vil_thresh=16, min_coverage=0.015):
+        """
+        min_vil_thresh: 像素值的门槛 (16 代表轻微降雨)
+        min_coverage:  面积占比门槛 (0.015 代表 1.5% 的区域必须有雨)
+        """
         batch_data = []
         end_idx = min(offset + n_batches, len(self._samples))
 
@@ -137,22 +147,53 @@ class SEVIRDataset(Dataset):
                 with h5py.File(self.hdf_files[fname].filename, 'r') as hf:
                     data = hf['vil'][int(fidx)]
 
-                # 维度检查 (H, W, T) -> (T, H, W)
+                    # 维度修正 (384,384,49) -> (49,384,384)
                 if data.shape[-1] == 49 and data.ndim == 3:
                     data = data.transpose(2, 0, 1)
 
-                data = data[:25] # 取前25帧
-                batch_data.append(data)
+                    # 滑动窗口
+                num_frames = data.shape[0]
+                for start_t in range(0, num_frames - self.seq_len + 1, stride):
+                    seq = data[start_t: start_t + self.seq_len]  # [25, 384, 384]
+
+                    # --- 核心修改：双重过滤 ---
+
+                    # 1. 快速检查：最大值是否达标
+                    if seq.max() < min_vil_thresh:
+                        continue
+
+                    # 2. 面积检查：计算大于阈值的像素比例
+                    # seq > min_vil_thresh 生成一个 Boolean 矩阵
+                    # np.mean 计算 True 的比例
+                    coverage = np.mean(seq > min_vil_thresh)
+
+                    # 如果降雨区域小于总面积的 1.5%，则丢弃
+                    if coverage < min_coverage:
+                        continue
+
+                    # --- 通过过滤，开始处理 ---
+
+                    # Resize to 128x128
+                    resized_seq = []
+                    for t in range(seq.shape[0]):
+                        img = cv2.resize(seq[t], (target_size, target_size), interpolation=cv2.INTER_LINEAR)
+                        resized_seq.append(img)
+
+                    seq = np.array(resized_seq)  # [25, 128, 128]
+                    batch_data.append(seq)
+
             except Exception as e:
                 print(f"Error reading {fname}: {e}")
                 continue
 
-        return np.array(batch_data)
+        return np.array(batch_data) if len(batch_data) > 0 else np.array([])
+
 
 class NowcastGenerator(SEVIRDataset):
     def __init__(self, catalog=None, sevir_data_home=None, **kwargs):
         if catalog is None: catalog = DEFAULT_CATALOG
         super(NowcastGenerator, self).__init__(catalog=catalog, sevir_data_home=sevir_data_home, **kwargs)
+
 
 def get_nowcast_generator(sevir_data, batch_size=8, data_name='sevir', start_date=None, end_date=None):
     return NowcastGenerator(
@@ -164,55 +205,57 @@ def get_nowcast_generator(sevir_data, batch_size=8, data_name='sevir', start_dat
         data_types=['vil']
     )
 
-def read_write_chunks(filename, generator, split, chunks):
-    """
-    filename: 单个 .h5 文件的路径
-    split: 当前是哪个集 (train/val/test)，用于创建组
-    """
-    print(f"Writing {split} data to {filename}...")
-    chunk_size = 100
 
-    # 预读取确定 Shape
+def read_write_chunks(filename, generator, split, chunks):
+    print(f"Writing {split} data to {filename}...")
+    chunk_size = 50
+
+    # 预读取确定 Shape (循环直到找到有效数据)
     print(f"[{split}] Checking data shape...")
-    sample_batch = generator.load_batches(n_batches=1, offset=0)
+    sample_batch = []
+    offset = 0
+    # 尝试查找有效数据，最多查 500 个样本，防止无限循环
+    while len(sample_batch) == 0 and offset < min(500, len(generator._samples)):
+        sample_batch = generator.load_batches(n_batches=10, offset=offset)
+        offset += 10
+
     if len(sample_batch) == 0:
-        print(f"Error: No data loaded for {split}.")
+        print(f"Error: No valid data found for {split} (Filter might be too strict?).")
         return
 
     _, t_total, h, w = sample_batch.shape
     print(f"[{split}] Detected Shape: {t_total} frames x {h}x{w}")
 
-    # 以 Append 模式打开文件
     with h5py.File(filename, 'a') as hf:
-        # 1. 创建组 (Group)
-        if split in hf:
-            del hf[split] # 如果已存在（例如重跑），先删除
+        if split in hf: del hf[split]
         grp = hf.create_group(split)
-
-        # 2. 在组下创建 Dataset
-        # 路径: /train/data, /val/data, /test/data
         grp.create_dataset('data', (0, t_total, h, w), maxshape=(None, t_total, h, w), dtype='uint8', chunks=True)
 
-    total_samples = len(generator._samples)
-    print(f"Total {split} samples: {total_samples}")
+    total_events = len(generator._samples)
+    print(f"Scanning {total_events} raw events...")
 
-    for i in range(0, total_samples, chunk_size):
+    samples_written = 0
+    for i in range(0, total_events, chunk_size):
         if chunks is not None and i >= chunks * chunk_size: break
 
-        if i % 500 == 0: print(f"Processing {i}/{total_samples}...")
+        if i % 500 == 0:
+            print(f"Scanning {i}/{total_events} | Written: {samples_written}")
 
         batch_data = generator.load_batches(n_batches=chunk_size, offset=i)
+
         if len(batch_data) == 0: continue
 
         with h5py.File(filename, 'a') as hf:
-            # 定位到组下的 dataset
             ds = hf[split]['data']
-
             curr_len = ds.shape[0]
             new_len = curr_len + batch_data.shape[0]
-
             ds.resize((new_len, t_total, h, w))
             ds[curr_len:] = batch_data
+
+        samples_written += len(batch_data)
+
+    print(f"Finished {split}. Total samples written: {samples_written}")
+
 
 def main(args):
     logging.basicConfig(level=logging.INFO)
@@ -220,33 +263,26 @@ def main(args):
     split_date_val_start = datetime.datetime(2019, 1, 1)
     split_date_test_start = datetime.datetime(2019, 6, 1)
 
-    # 统一文件名
-    final_file = osp.join(args.output_dir, f'{args.data_name}.h5') # e.g., data/sevir/sevir.h5
+    final_file = osp.join(args.output_dir, f'{args.data_name}.h5')
 
-    # 如果重新开始，先删除旧文件
     if osp.exists(final_file):
         print(f"Removing old file: {final_file}")
         os.remove(final_file)
 
-    # 1. Train
     print("\n--- Processing Training Set ---")
     trn_gen = get_nowcast_generator(args.sevir_data, end_date=split_date_val_start)
-    if len(trn_gen._samples) > 0:
-        read_write_chunks(final_file, trn_gen, split='train', chunks=args.chunks)
+    read_write_chunks(final_file, trn_gen, split='train', chunks=args.chunks)
 
-    # 2. Val
     print("\n--- Processing Validation Set ---")
     val_gen = get_nowcast_generator(args.sevir_data, start_date=split_date_val_start, end_date=split_date_test_start)
-    if len(val_gen._samples) > 0:
-        read_write_chunks(final_file, val_gen, split='val', chunks=args.chunks)
+    read_write_chunks(final_file, val_gen, split='val', chunks=args.chunks)
 
-    # 3. Test
     print("\n--- Processing Testing Set ---")
     test_gen = get_nowcast_generator(args.sevir_data, start_date=split_date_test_start)
-    if len(test_gen._samples) > 0:
-        read_write_chunks(final_file, test_gen, split='test', chunks=args.chunks)
+    read_write_chunks(final_file, test_gen, split='test', chunks=args.chunks)
 
     print(f"\nAll Done! Data saved to {final_file}")
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

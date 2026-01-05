@@ -148,7 +148,7 @@ def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse', 'radar_metric
             'use_pixel_threshold': False
         },
         'sevir': {
-            'scale': 255.0,
+            'scale': 1.0,
             'offset': 0.0,
             'thresholds': [16, 74, 133, 160, 181, 219],
             'use_pixel_threshold': True

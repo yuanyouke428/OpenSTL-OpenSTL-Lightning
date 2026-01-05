@@ -15,7 +15,7 @@ from .base_data import BaseDataModule
 
 # 1. 在文件顶部导入你刚才写的类
 from .dataloader_cikm import CIKMDataset
-
+from .dataloader_sevir import load_data as load_data_sevir
 __all__ = [
     'KittiCaltechDataset', 'HumanDataset', 'KTHDataset', 'MovingMNIST', 'TaxibjDataset',
     'WeatherBenchDataset', 'SEVIRDataset',
