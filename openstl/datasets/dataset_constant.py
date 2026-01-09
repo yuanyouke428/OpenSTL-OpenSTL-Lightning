@@ -230,6 +230,19 @@ dataset_parameters = {
         'metrics': ['mse', 'mae', 'pod', 'ssim', 'lpips','radar_metrics'],
     },
 
+    'meteonet': {
+        # 请根据实际 h5 数据修改 in_shape: [输入帧数, 通道数, 高, 宽]
+        'in_shape': [5, 1, 128, 128],
+        'pre_seq_length': 5,
+        'aft_seq_length': 20,
+        'total_length': 25,
+        'data_name': 'meteonet',
+        # 降水任务常用指标：MSE, MAE, 以及 CSI (Critical Success Index)
+        'metrics': ['mse', 'mae', 'pod', 'ssim', 'lpips','radar_metrics'],
+        # 默认路径，运行时会被命令行参数覆盖
+       # 'data_root': './data/meteonet.h5',
+    },
+
     'cikm': {
         'in_shape': [5, 1, 128, 128],
         'pre_seq_length': 5,

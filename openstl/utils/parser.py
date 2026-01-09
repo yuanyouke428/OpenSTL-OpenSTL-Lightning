@@ -35,7 +35,7 @@ def create_parser():
                                 'weather', 'weather_t2m_5_625', 'weather_mv_4_28_s6_5_625', 'weather_mv_4_4_s6_5_625',
                                 'weather_r_5_625', 'weather_uv10_5_625', 'weather_tcc_5_625', 'weather_t2m_1_40625',
                                 'weather_r_1_40625', 'weather_uv10_1_40625', 'weather_tcc_1_40625',
-                                'sevir_vis', 'sevir_ir069', 'sevir_ir107', 'sevir_vil', 'sevir','cikm'],
+                                'sevir_vis', 'sevir_ir069', 'sevir_ir107', 'sevir_vil', 'sevir','meteonet','cikm'],
                         help='Dataset name (default: "mmnist")')
     parser.add_argument('--pre_seq_length', default=None, type=int, help='Sequence length before prediction')
     parser.add_argument('--aft_seq_length', default=None, type=int, help='Sequence length after prediction')
@@ -102,6 +102,10 @@ def create_parser():
                         help='LR decay rate (default: 0.1)')
     parser.add_argument('--filter_bias_and_bn', type=bool, default=False,
                         help='Whether to set the weight decay of bias and bn to 0')
+
+    # 在 parser.py 中添加 patience 参数
+    parser.add_argument('--patience', type=int, default=None,
+                        help='Early stopping patience (default: None, meaning distinct disabled)')
 
     # lightning
     parser.add_argument('--gpus', nargs='+', default=[0], type=int)

@@ -75,6 +75,20 @@ class BaseExperiment(object):
         epochend_callback = EpochEndCallback()
 
         callbacks = [setup_callback, ckpt_callback, epochend_callback]
+
+        # === 新增代码开始 ===
+        # 如果 args.patience 被设置（不是 None），则添加早停回调
+        if args.patience is not None and args.patience > 0:
+            early_stop_callback = lc.EarlyStopping(
+                monitor=args.metric_for_bestckpt,  # 监控指标，通常是 'val_loss'
+                patience=args.patience,  # 容忍多少个 epoch 不提升
+                mode='min',  # 'min' 表示指标越小越好 (针对 loss, mse, mae)
+                verbose=True  # 触发早停时打印日志
+            )
+            callbacks.append(early_stop_callback)
+        # === 新增代码结束 ===
+
+
         if args.sched:
             callbacks.append(lc.LearningRateMonitor(logging_interval=None))
         return callbacks, save_dir
