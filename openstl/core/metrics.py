@@ -9,7 +9,8 @@ except ImportError:
     lpips = None
     cal_ssim = None
 
-
+# 定义一个全局变量，初始为 None
+_GLOBAL_LPIPS_SCORER = None
 # =========================================================================
 # 1. 基础工具函数
 # =========================================================================
@@ -49,13 +50,13 @@ def HSS(hits, fas, misses, cn, eps=1e-6):
     return num / (den + eps)
 
 
-def MAE(pred, true, spatial_norm=False): return np.mean(np.abs(pred - true))
+def MAE(pred, true): return np.mean(np.abs(pred - true))
 
 
-def MSE(pred, true, spatial_norm=False): return np.mean((pred - true) ** 2)
+def MSE(pred, true): return np.mean((pred - true) ** 2)
 
 
-def RMSE(pred, true, spatial_norm=False): return np.sqrt(MSE(pred, true))
+def RMSE(pred, true): return np.sqrt(MSE(pred, true))
 
 
 # =========================================================================
@@ -92,8 +93,7 @@ class LPIPS(nn.Module):
         pred_t = pred_t * 2 - 1
         true_t = true_t * 2 - 1
 
-        # 5. 【关键修改】分 Batch 计算，防止 OOM
-        # 每次只算 32 张图 (你可以根据显存大小调整这个 mini_batch)
+        # 5. 分 Batch 计算，防止 OOM
         mini_batch = 32
         scores = []
         N = pred_t.shape[0]
@@ -110,7 +110,7 @@ class LPIPS(nn.Module):
                 # 计算当前 mini-batch 的分数并转回 CPU
                 batch_score = self.loss_fn(p_batch, t_batch).squeeze().cpu().numpy()
 
-                # 兼容处理：如果只有一个数，转化为列表
+                # 兼容处理
                 if batch_score.ndim == 0:
                     scores.append(batch_score.item())
                 else:
@@ -118,41 +118,61 @@ class LPIPS(nn.Module):
 
         return np.mean(scores)
 
+
 # =========================================================================
 # 3. 主评估函数 (metric)
 # =========================================================================
 
 def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse', 'radar_metrics'],
-           clip_range=[0, 1], spatial_norm=False, return_log=True,
-           dataset_name='cikm', channel_names=None, **kwargs):
-    # 1. 反归一化
+           clip_range=[0,1], spatial_norm=False, return_log=True,
+           dataset_name='default', channel_names=None, **kwargs):
+
+
+    print(f"DEBUG: Running metric() for dataset: {dataset_name}")
+
+
+    # -------------------------------------------------------------------------
+    # 阶段 A: 初步反归一化 (如果 base_method 传了 mean/std)
+    # -------------------------------------------------------------------------
+    # 如果您的 base_method 没有传 mean/std (即传了 0/1 或 None)，这步相当于没做
     if mean is not None and std is not None:
         pred = pred * std + mean
         true = true * std + mean
 
-    pred = np.maximum(pred, clip_range[0])
-    pred = np.minimum(pred, clip_range[1])
-    true = np.maximum(true, clip_range[0])
-    true = np.minimum(true, clip_range[1])
-
-    eval_res = {}
-    eval_log = ""
-
-    # 配置中心
+    # -------------------------------------------------------------------------
+    # 阶段 B: 数据集配置中心 (核心修改)
+    # -------------------------------------------------------------------------
     METRIC_CONFIGS = {
         'cikm': {
-            'scale': 95.0,
-            'offset': -10.0,
-            # 【修复1】加回 10，并保留常用的阈值
+            'scale': 95.0,  # 0-1 映射到 0-95
+            'offset': -10.0,  # 偏移到 -10 到 85 dBZ
             'thresholds': [10, 20, 30, 35, 40],
             'use_pixel_threshold': False
         },
-        'sevir': {
-            'scale': 1.0,
-            'offset': 0.0,
-            'thresholds': [16, 74, 133, 160, 181, 219],
-            'use_pixel_threshold': True
+        'meteonet': {
+            'scale': 70.0,  #
+            'offset': 0,  #
+            'thresholds': [12, 18, 24, 32],
+            'use_pixel_threshold': False
         },
+        'shanghai': {
+            'scale': 90.0,  #根据Diffcast
+            'offset': 0,  #
+            'thresholds': [20, 30, 35, 40],
+            'use_pixel_threshold': False
+        },
+        'sevir': {
+            # 【核心修改点】
+            # 在这里定义 SEVIR 的反归一化逻辑 (Mean=33.44, Std=47.54)
+            # 逻辑：Pixel_Value = Normalized_Value * scale + offset
+            'scale': 47.54,
+            'offset': 33.44,
+            'thresholds': [16, 74, 133, 160, 181, 219],
+            # 设为 False，因为经过上面的 scale/offset 计算后，数据已经是 0-255 的像素值了
+            # 我们直接用 16, 74 跟 0-255 比较即可
+            'use_pixel_threshold': False
+        },
+
         'default': {
             'scale': 1.0,
             'offset': 0.0,
@@ -161,77 +181,145 @@ def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse', 'radar_metric
         }
     }
 
-    cfg = METRIC_CONFIGS.get(dataset_name, METRIC_CONFIGS['default'])
+    # 1. 获取配置
+    # 使用包含匹配，这样 'sevir_13to12' 也能匹配到 'sevir'
+    cfg = METRIC_CONFIGS['default']
+    for k in METRIC_CONFIGS.keys():
+        if k in dataset_name.lower():
+            cfg = METRIC_CONFIGS[k]
+            break
 
-    # 计算物理值 (dBZ)
+    # 2. 计算物理值 (Physical Values)
+    # 这是最关键的一步：将归一化的数据转换回真实的物理量/像素值 (如 0-255)
     pred_eval = pred * cfg['scale'] + cfg['offset']
     true_eval = true * cfg['scale'] + cfg['offset']
 
-    # 【修复2】决定使用哪种数据计算 MSE/MAE
-    # 如果你想看“大数值”的物理误差，使用 pred_eval
-    # 如果你想看“标准”的归一化误差，使用 pred
-    # 这里我改为 pred_eval 以恢复你之前的数值大小
-    target_pred = pred_eval if 'radar_metrics' in metrics else pred
-    target_true = true_eval if 'radar_metrics' in metrics else true
+    # 3. 截断保护 (Clip)
+    # 确保数值在合理范围内，SEVIR 是 0-255
+    #max_val = 255.0 if 'sevir' in dataset_name.lower() or 'cikm' in dataset_name.lower() else 1.0
+    # 修改后：根据配置动态决定，或者把 meteo 加入白名单
+    if 'meteonet' in dataset_name.lower():
+        max_val = 70.0
+    # === 新增 shanghai 分支 ===
+    elif 'shanghai' in dataset_name.lower():
+        max_val = 90.0  # 对应 METRIC_CONFIGS 中的 scale
+    # ==========================
+    elif 'sevir' in dataset_name.lower() or 'cikm' in dataset_name.lower():
+        max_val = 255.0
+    else:
+        max_val = 1.0
 
-    # 基础指标
+
+    pred_eval = np.maximum(pred_eval, 0)
+    pred_eval = np.minimum(pred_eval, max_val)
+    true_eval = np.maximum(true_eval, 0)
+    true_eval = np.minimum(true_eval, max_val)
+
+    # -------------------------------------------------------------------------
+    # 阶段 C: 指标计算
+    # -------------------------------------------------------------------------
+    eval_res = {}
+    eval_log = ""
+
+    # 【重要】决定计算 MSE/MAE 使用哪种数据
+    # 只要包含 radar_metrics，我们就强制使用物理值 (pred_eval) 来计算所有指标
+    # 这样您的 MSE 就会是 1800+ 而不是 0.2
+    target_pred = pred_eval if ('radar_metrics' in metrics or 'sevir' in dataset_name.lower()) else pred
+    target_true = true_eval if ('radar_metrics' in metrics or 'sevir' in dataset_name.lower()) else true
+
+    # 1. 基础指标 (MSE, MAE, RMSE)
     if 'mse' in metrics: eval_res['mse'] = MSE(target_pred, target_true)
     if 'mae' in metrics: eval_res['mae'] = MAE(target_pred, target_true)
     if 'rmse' in metrics: eval_res['rmse'] = RMSE(target_pred, target_true)
 
-    # 气象指标
+    # 2. 气象分类指标 (CSI, HSS, POD)
     if 'radar_metrics' in metrics or 'csi' in metrics:
         total_pixels = np.prod(pred.shape)
-        avg_csi = []
-        avg_hss = []
-        avg_pod = []  # 初始化
+        avg_csi, avg_hss, avg_pod = [], [], []
 
         for t in cfg['thresholds']:
+            # 处理阈值
             current_t = t
             if cfg['use_pixel_threshold']:
                 current_t = t / 255.0
 
-            hits, fas, misses = calculate_confusion(pred_eval, true_eval, t)  # 始终用物理值对比
+            # 【Bug 修复】这里之前写成了 t，必须用 current_t
+            hits, fas, misses = calculate_confusion(target_pred, target_true, current_t)
             cn = total_pixels - hits - misses - fas
 
             t_csi = CSI(hits, fas, misses)
             t_hss = HSS(hits, fas, misses, cn)
-            t_pod = POD(hits, misses)  # 【修复3】计算 POD
+            t_pod = POD(hits, misses)
 
-            key_suffix = str(t).replace('.', 'p')
+            key_suffix = str(int(t)) if t > 1 else str(t).replace('.', 'p')
             eval_res[f'csi_{key_suffix}'] = t_csi
             eval_res[f'hss_{key_suffix}'] = t_hss
-            # eval_res[f'pod_{key_suffix}'] = t_pod # 如果你想看每个阈值的POD就取消注释
+            # eval_res[f'pod_{key_suffix}'] = t_pod
 
             avg_csi.append(t_csi)
             avg_hss.append(t_hss)
             avg_pod.append(t_pod)
 
-        eval_res['avg_csi'] = np.mean(avg_csi)  # 即 cikm_csi
-        eval_res['avg_hss'] = np.mean(avg_hss)  # 即 cikm_hss
-        eval_res['pod'] = np.mean(avg_pod)  # 把平均 POD 加回去
+        eval_res['avg_csi'] = np.mean(avg_csi)
+        eval_res['avg_hss'] = np.mean(avg_hss)
+        eval_res['pod'] = np.mean(avg_pod)
 
-    # 图像质量
+    # 3. 感知质量指标 (SSIM)
     if 'ssim' in metrics and cal_ssim is not None:
         ssim_sum = 0
         B, T = pred.shape[:2]
-        # SSIM 建议在归一化尺度 [0,1] 计算，或者与之前保持一致
-        # 这里使用归一化数据以保持标准性
+        # SSIM 建议使用 data_range 参数来适配数据范围
+        data_range = max_val
+
         for b in range(B):
             for t in range(T):
-                ssim_sum += cal_ssim(pred[b, t].squeeze(), true[b, t].squeeze(), data_range=1.0)
+                ssim_sum += cal_ssim(target_pred[b, t].squeeze(), target_true[b, t].squeeze(),
+                                     data_range=data_range)
         eval_res['ssim'] = ssim_sum / (B * T)
 
-    if 'lpips' in metrics and lpips is not None:
-        try:
-            scorer = LPIPS(net='alex', use_gpu=True)
-            eval_res['lpips'] = scorer(pred, true)
-        except Exception as e:
-            print(f"\n[Warning] LPIPS calculation failed: {e}")  # 打印具体的错误信息
+        # 引用全局变量
+        global _GLOBAL_LPIPS_SCORER
 
-    if return_log:
-        for k, v in eval_res.items():
-            val = f"{v:.4f}" if isinstance(v, (float, np.float32)) else str(v)
-            eval_log += f"{k}:{val}, "
+        # 4. 感知误差 (LPIPS)
+        if 'lpips' in metrics and lpips is not None:
+            try:
+                # 【修复点】: 只有当全局变量为空时才实例化，否则直接复用！
+                if _GLOBAL_LPIPS_SCORER is None:
+                    # 实例化一次，权重加载进显存
+                    _GLOBAL_LPIPS_SCORER = LPIPS(net='alex', use_gpu=True)
+                    # 可选：确保模型处于评估模式
+                    if hasattr(_GLOBAL_LPIPS_SCORER, 'loss_fn') and _GLOBAL_LPIPS_SCORER.loss_fn:
+                        _GLOBAL_LPIPS_SCORER.loss_fn.eval()
 
-    return eval_res, eval_log
+                # 使用全局实例进行计算
+                eval_res['lpips'] = _GLOBAL_LPIPS_SCORER(pred, true)
+
+            except Exception as e:
+                print(f"\n[Warning] LPIPS calculation failed: {e}")
+                # 如果出错（比如显存不足），可以将全局变量重置，防止错误持续
+                _GLOBAL_LPIPS_SCORER = None
+
+        if return_log:
+            for k, v in eval_res.items():
+                val = f"{v:.4f}" if isinstance(v, (float, np.float32)) else str(v)
+                eval_log += f"{k}:{val}, "
+
+        return eval_res, eval_log
+
+
+    # # 4. 感知误差 (LPIPS)
+    # if 'lpips' in metrics and lpips is not None:
+    #     try:
+    #         scorer = LPIPS(net='alex', use_gpu=True)
+    #         # LPIPS 内部会自动处理归一化，但为了稳健，我们传归一化后的数据
+    #         # 这里的 pred 还是原始输入 (normalized)，可以直接用
+    #         eval_res['lpips'] = scorer(pred, true)
+    #     except Exception as e:
+    #         print(f"\n[Warning] LPIPS calculation failed: {e}")
+    #
+    # if return_log:
+    #     for k, v in eval_res.items():
+    #         val = f"{v:.4f}" if isinstance(v, (float, np.float32)) else str(v)
+    #         eval_log += f"{k}:{val}, "
+    #
+    # return eval_res, eval_log

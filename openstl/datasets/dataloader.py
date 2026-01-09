@@ -51,6 +51,17 @@ def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, dist
         from .dataloader_sevir import load_data
         cfg_dataloader['data_name'] = kwargs.get('data_name', 'sevir')
         return load_data(batch_size, val_batch_size, data_root, num_workers, **cfg_dataloader)
+
+    elif dataname == 'meteonet':
+        from .dataloader_meteonet import load_data
+        return load_data(batch_size, val_batch_size, data_root, num_workers, **cfg_dataloader)
+
+        # === 新增 shanghai 分支 ===
+    elif dataname == 'shanghai':
+        from .dataloader_shanghai import load_data
+        return load_data(batch_size, val_batch_size, data_root, num_workers, **cfg_dataloader)
+        # ========================
+
         # --- 在这里插入 CIKM 的逻辑 ---
     elif dataname == 'cikm':
         from .dataloader_cikm import load_data

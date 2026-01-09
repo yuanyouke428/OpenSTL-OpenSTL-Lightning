@@ -16,8 +16,10 @@ from .base_data import BaseDataModule
 # 1. 在文件顶部导入你刚才写的类
 from .dataloader_cikm import CIKMDataset
 from .dataloader_sevir import load_data as load_data_sevir
+from .dataloader_meteonet import MeteoNetDataset
+from .dataloader_shanghai import ShanghaiDataset
 __all__ = [
     'KittiCaltechDataset', 'HumanDataset', 'KTHDataset', 'MovingMNIST', 'TaxibjDataset',
-    'WeatherBenchDataset', 'SEVIRDataset',
+    'WeatherBenchDataset', 'SEVIRDataset','MeteoNetDataset','ShanghaiDataset',
     'load_data', 'dataset_parameters', 'create_loader', 'CIKMDataset','BaseDataModule'
 ]

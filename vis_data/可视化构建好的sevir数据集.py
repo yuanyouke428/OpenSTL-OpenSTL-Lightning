@@ -192,7 +192,8 @@ def load_data(batch_size,
 
 if __name__ == '__main__':
     # 测试代码
-    path = 'data/sevir'  # 确保这里指向包含 sevir.h5 的文件夹
+    #path = 'data/sevir'  # 确保这里指向包含 sevir.h5 的文件夹
+    path = '/home/ps/data2/zp/data'
     print(f"Testing DataLoader from: {path}")
 
     try:

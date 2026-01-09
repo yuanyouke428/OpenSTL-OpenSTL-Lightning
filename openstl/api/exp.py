@@ -13,7 +13,11 @@ from openstl.utils import (get_dataset, measure_throughput, SetupCallback, Epoch
 
 from lightning import seed_everything, Trainer
 import lightning.pytorch.callbacks as lc
+# import setproctitle
+# setproctitle.setproctitle("ZP")  #命名进程
 
+# import openstl
+# print(f"!!! 正在使用的 OpenSTL 路径: {openstl.__file__}")
 
 class BaseExperiment(object):
     """The basic class of PyTorch training and evaluation."""
@@ -75,6 +79,20 @@ class BaseExperiment(object):
         epochend_callback = EpochEndCallback()
 
         callbacks = [setup_callback, ckpt_callback, epochend_callback]
+
+        # === 新增代码开始 ===
+        # 如果 args.patience 被设置（不是 None），则添加早停回调
+        if args.patience is not None and args.patience > 0:
+            early_stop_callback = lc.EarlyStopping(
+                monitor=args.metric_for_bestckpt,  # 监控指标，通常是 'val_loss'
+                patience=args.patience,  # 容忍多少个 epoch 不提升
+                mode='min',  # 'min' 表示指标越小越好 (针对 loss, mse, mae)
+                verbose=True  # 触发早停时打印日志
+            )
+            callbacks.append(early_stop_callback)
+        # === 新增代码结束 ===
+
+
         if args.sched:
             callbacks.append(lc.LearningRateMonitor(logging_interval=None))
         return callbacks, save_dir
@@ -93,11 +111,28 @@ class BaseExperiment(object):
     def train(self):
         self.trainer.fit(self.method, self.data, ckpt_path=self.args.ckpt_path if self.args.ckpt_path else None)
 
+    # def test(self):
+    #     if self.args.test:
+    #         # 1. 优先使用命令行传入的 ckpt_path
+    #         if self.args.ckpt_path:
+    #             ckpt_path = self.args.ckpt_path
+    #         else:
+    #             # 2. 如果没传，才回退到默认的 best.ckpt
+    #             ckpt_path = osp.join(self.save_dir, 'checkpoints', 'best.ckpt')
+    #
+    #         print(f"DEBUG: Manually loading checkpoint from: {ckpt_path}")
+    #         # 3. 将路径传给 trainer.test，让它负责加载权重
+    #         self.trainer.test(self.method, self.data, ckpt_path=ckpt_path)
+    #     else:
+    #         # 训练模式下，fit 之后直接测试，不需要手动指定路径 (Lightning 会自动用 best)
+    #         self.trainer.test(self.method, self.data)
     def test(self):
         if self.args.test == True:
             ckpt = torch.load(osp.join(self.save_dir, 'checkpoints', 'best.ckpt'))
             self.method.load_state_dict(ckpt['state_dict'])
         self.trainer.test(self.method, self.data)
+
+
     
     def display_method_info(self, args):
         """Plot the basic infomation of supported methods"""
