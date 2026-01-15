@@ -7,16 +7,16 @@ import matplotlib.colors as mcolors
 # 1. 核心配置
 # ==========================================
 # 数据存放的文件夹
-DATA_DIR = 'work_dirs/sevir_convlstm_v2/saved_batches'
+DATA_DIR = '/home/ps/data2/zp/OpenSTL-OpenSTL-Lightning/work_dirs/mamba_Anisotropic_scan_FrequencyLoss_v5/saved_batches'
 
 # 您想看哪个 Batch 文件?
 BATCH_ID = 0
 
 # 您想看该 Batch 里的第几个样本? (0 到 15)
-SAMPLE_IDX = 10
+SAMPLE_IDX = 8
 
 # 结果保存路径
-OUTPUT_DIR = 'vis_sevir_results'
+OUTPUT_DIR = 'vis_sevir_mamba_Anisotropic_scan_FrequencyLoss_v5_results'
 
 # 显示设置
 INTERVAL = 1  # 设为 1 表示画出每一帧 (12帧全部画出)

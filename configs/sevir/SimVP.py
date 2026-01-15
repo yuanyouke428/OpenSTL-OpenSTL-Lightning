@@ -13,7 +13,8 @@ N_S = 2
 
 # training
 lr = 1e-3           # 128分辨率下建议稍微调小学习率
-batch_size = 16     # 128分辨率下显存占用小，建议开大 Batch Size (如 16 或 32)
+batch_size = 32   # 128分辨率下显存占用小，建议开大 Batch Size (如 16 或 32)
+val_batch_size = 32
 drop_path = 0.1
 sched = 'onecycle'
 warmup_epoch = 0

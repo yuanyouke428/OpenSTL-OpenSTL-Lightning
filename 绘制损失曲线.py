@@ -4,8 +4,8 @@ import os
 import pandas as pd  # 引入 pandas 用于保存 csv 数据
 
 # 1. 配置区域
-log_file = '/home/ps/data2/zp/OpenSTL-OpenSTL-Lightning/work_dirs/CIKM_MAU/train_20260101_191017.log'
-save_dir = './vis_results_loss/CIKM_MAU'  # 指定保存目录
+log_file = '/home/ps/data2/zp/OpenSTL-OpenSTL-Lightning/work_dirs/mamba_Anisotropic_scan/train_20260111_121823.log'
+save_dir = './vis_results_loss/mamba_Anisotropic_scan'  # 指定保存目录
 img_name = 'loss_curve.png'
 data_name = 'training_log_data.csv'
 

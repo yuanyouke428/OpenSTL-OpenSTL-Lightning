@@ -75,7 +75,7 @@ class Base_method(l.LightningModule):
         # 获取数据集名称，统一转小写处理
         d_name = self.hparams.dataname.lower() if hasattr(self.hparams, 'dataname') else 'default'
         # 定义哪些数据集需要开启“内存节省模式”
-        large_datasets = ['sevir']
+        large_datasets = ['sevir']  #sevir
         is_large_dataset = any(name in d_name for name in large_datasets)
 
         outputs = {

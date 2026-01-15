@@ -11,9 +11,9 @@ from .predrnnv2_model import PredRNNv2_Model
 from .simvp_model import SimVP_Model
 from .mmvp_model import MMVP_Model
 from .swinlstm_model import SwinLSTM_D_Model, SwinLSTM_B_Model
-
+from .mamba_model import MambaCast  # <--- 添加这一行
 __all__ = [
     'ConvLSTM_Model', 'E3DLSTM_Model', 'MAU_Model', 'MIM_Model', 'PhyDNet_Model',
-    'PredRNN_Model', 'PredRNNpp_Model', 'PredRNNv2_Model', 'SimVP_Model',
+    'PredRNN_Model', 'PredRNNpp_Model', 'PredRNNv2_Model', 'SimVP_Model','MambaCast',
     "MMVP_Model", 'SwinLSTM_D_Model', 'SwinLSTM_B_Model'
 ]

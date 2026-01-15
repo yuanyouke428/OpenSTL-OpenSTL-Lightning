@@ -128,7 +128,7 @@ def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse', 'radar_metric
            dataset_name='default', channel_names=None, **kwargs):
 
 
-    print(f"DEBUG: Running metric() for dataset: {dataset_name}")
+    #print(f"DEBUG: Running metric() for dataset: {dataset_name}")
 
 
     # -------------------------------------------------------------------------
